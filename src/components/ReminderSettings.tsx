@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 
 const API = '/api/notifications';
@@ -26,8 +26,42 @@ function decodeKey(key: string) {
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 }
 
+const serviceWorkerUrl = '/service-worker.js';
+const timeoutMs = 10_000;
+
+function withinTimeout<T>(operation: Promise<T>): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error('Notification setup timed out')), timeoutMs);
+    operation.then(resolve, reject).finally(() => window.clearTimeout(timer));
+  });
+}
+
+async function fetchNotification(path: string, options: RequestInit = {}) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(API + path, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function loadPushSetup() {
+  const [registration, response] = await Promise.all([
+    withinTimeout(navigator.serviceWorker.register(serviceWorkerUrl)),
+    fetchNotification('/config', { cache: 'no-store' }),
+  ]);
+  if (!response.ok) throw new Error('Push has not been configured');
+  const { publicKey } = await response.json();
+  if (typeof publicKey !== 'string') throw new Error('Missing push key');
+  const key = decodeKey(publicKey);
+  if (key.length !== 65 || key[0] !== 4) throw new Error('Invalid push key');
+  const activeRegistration = registration.active ? registration : await withinTimeout(navigator.serviceWorker.ready);
+  return { registration: activeRegistration, publicKey: key };
+}
+
 async function saveSubscription(method: 'POST' | 'DELETE', subscription: PushSubscription) {
-  const response = await fetch(API + '/subscription', {
+  const response = await fetchNotification('/subscription', {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(subscription.toJSON()),
@@ -37,43 +71,35 @@ async function saveSubscription(method: 'POST' | 'DELETE', subscription: PushSub
 
 export function ReminderSettings() {
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
-  const [setup, setSetup] = useState<{ registration: ServiceWorkerRegistration; publicKey: string }>();
+  const setup = useRef<ReturnType<typeof loadPushSetup> | null>(null);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [enabled, setEnabled] = useState(false);
-  const [busy, setBusy] = useState(supported);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     if (!supported) return;
     let active = true;
-    async function load() {
-      try {
-        const registration = await navigator.serviceWorker.register('/service-worker.js');
-        const current = await registration.pushManager.getSubscription();
-        if (!active) return;
-        setSubscription(current);
-        setEnabled(Boolean(current && current.endpoint === readSyncedEndpoint() && Notification.permission === 'granted'));
-        const response = await fetch(API + '/config');
-        if (!response.ok) throw new Error('Push has not been configured');
-        const { publicKey } = await response.json();
-        if (typeof publicKey !== 'string') throw new Error('Missing push key');
-        if (active) setSetup({ registration, publicKey });
-      } catch {
-        if (active) setMessage('Bildirim hizmetine şu anda ulaşılamıyor.');
-      } finally {
-        if (active) setBusy(false);
-      }
-    }
-    void load();
+    const attempt = loadPushSetup();
+    setup.current = attempt;
+    void attempt.then(async ({ registration }) => {
+      const current = await withinTimeout(registration.pushManager.getSubscription());
+      if (!active || setup.current !== attempt) return;
+      setSubscription(current);
+      setEnabled(Boolean(current && current.endpoint === readSyncedEndpoint() && Notification.permission === 'granted'));
+    }).catch(() => {
+      if (setup.current === attempt) setup.current = null;
+    });
     return () => { active = false; };
   }, [supported]);
 
   async function enable() {
-    if (!setup) return;
     setBusy(true);
-    setMessage('');
+    setMessage('Bildirimler açılıyor…');
+    const prepared = setup.current;
     try {
-      const permission = await Notification.requestPermission();
+      const permission = Notification.permission === 'granted'
+        ? 'granted' : await Notification.requestPermission();
       if (permission !== 'granted') {
         setMessage(permission === 'denied'
           ? 'Bildirim izni kapalı. Cihazınızın site veya uygulama ayarlarından izin verebilirsiniz.'
@@ -81,18 +107,19 @@ export function ReminderSettings() {
         return;
       }
 
-      const registration = setup.registration.active ? setup.registration : await navigator.serviceWorker.ready;
-      const publicKey = decodeKey(setup.publicKey);
-      let current = await registration.pushManager.getSubscription();
+      // Ignore any background check that started before this user action.
+      setup.current = null;
+      const { registration, publicKey } = await (prepared ? prepared.catch(() => loadPushSetup()) : loadPushSetup());
+      let current = await withinTimeout(registration.pushManager.getSubscription());
       const previousKey = current?.options.applicationServerKey;
       const previousBytes = previousKey ? new Uint8Array(previousKey) : null;
       if (current && previousBytes && (previousBytes.length !== publicKey.length ||
         !publicKey.every((byte, index) => byte === previousBytes[index]))) {
-        await current.unsubscribe();
+        await withinTimeout(current.unsubscribe());
         current = null;
         setSubscription(null);
       }
-      current ??= await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
+      current ??= await withinTimeout(registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }));
       setSubscription(current);
       await saveSubscription('POST', current);
       rememberEndpoint(current.endpoint);
@@ -108,9 +135,9 @@ export function ReminderSettings() {
   async function disable() {
     if (!subscription) return;
     setBusy(true);
-    setMessage('');
+    setMessage('Bildirimler kapatılıyor…');
     try {
-      await subscription.unsubscribe();
+      await withinTimeout(subscription.unsubscribe());
       rememberEndpoint(null);
       setSubscription(null);
       setEnabled(false);
@@ -133,11 +160,11 @@ export function ReminderSettings() {
         <p role="status" className="mt-1 text-xs text-[#575047]">
           {message || (!supported
             ? 'iPhone veya iPad’de Akademi’yi Ana Ekran’dan açın. Bildirimler için desteklenen bir tarayıcı gerekir.'
-            : busy ? 'Bildirim ayarları kontrol ediliyor…' : enabled ? 'Bu cihazda açık.' : '')}
+            : enabled ? 'Bu cihazda açık.' : '')}
         </p>
       </div>
       {supported && (
-        <button type="button" onClick={enabled ? disable : enable} disabled={busy || (!enabled && !setup)}
+        <button type="button" onClick={enabled ? disable : enable} disabled={busy}
           className="min-h-11 rounded-lg border border-[#D4CBB4] px-3 text-sm font-semibold text-[#064E3B] hover:bg-[#F3EDE0] disabled:opacity-40">
           {enabled ? 'Bildirimleri kapat' : 'Bildirimleri aç'}
         </button>
