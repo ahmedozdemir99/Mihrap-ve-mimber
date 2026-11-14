@@ -330,28 +330,18 @@ export default function App() {
     }
   };
 
-  const handleQuizComplete = (result: {
-    moduleFilter: 'all' | number;
-    score: number;
-    total: number;
-  }) => {
-    setQuizStats((prev) => {
-      const pct = result.total > 0 ? result.score / result.total : 0;
-      const next: QuizStats = {
-        ...prev,
-        testsCompleted: prev.testsCompleted + 1,
+  const handleQuizComplete = (result: { testId: string; score: number; total: number }) => {
+    setQuizStats((previous) => {
+      const bestScore = previous.bestScores?.[result.testId];
+      const improvedOverall = previous.bestOverallTotal === 0 ||
+        result.score / result.total >= previous.bestOverallScore / previous.bestOverallTotal;
+      return {
+        ...previous,
+        testsCompleted: previous.testsCompleted + 1,
+        bestOverallScore: improvedOverall ? result.score : previous.bestOverallScore,
+        bestOverallTotal: improvedOverall ? result.total : previous.bestOverallTotal,
+        bestScores: { ...previous.bestScores, [result.testId]: Math.max(bestScore ?? 0, result.score) },
       };
-      if (result.moduleFilter === 'all') {
-        const prevPct =
-          prev.bestOverallTotal > 0 ? prev.bestOverallScore / prev.bestOverallTotal : 0;
-        if (pct >= prevPct) {
-          next.bestOverallScore = result.score;
-          next.bestOverallTotal = result.total;
-        }
-      } else if (pct >= 0.75 && !prev.passedModules.includes(result.moduleFilter)) {
-        next.passedModules = [...prev.passedModules, result.moduleFilter];
-      }
-      return next;
     });
   };
 
@@ -394,11 +384,6 @@ export default function App() {
     setMemorizationCompleted([]);
     setUnlockedToast([]);
   };
-
-  const bestOverallPercent =
-    quizStats.bestOverallTotal > 0
-      ? Math.round((quizStats.bestOverallScore / quizStats.bestOverallTotal) * 100)
-      : 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#1F1C18] pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
@@ -767,7 +752,7 @@ export default function App() {
             <QuizView
               onQuizAnswer={handleQuizAnswer}
               onQuizComplete={handleQuizComplete}
-              bestOverallPercent={bestOverallPercent}
+              bestScores={quizStats.bestScores ?? {}}
             />
             <BadgesSection badges={badges} compact />
           </div>

@@ -13,7 +13,7 @@ import {
   RotateCcw,
   Trash2,
 } from 'lucide-react';
-import type { LessonCard, ModuleData } from '../types/academy';
+import type { LessonCard, MediaItem, ModuleData } from '../types/academy';
 import { AudioPlayerBox } from './AudioPlayerBox';
 import { VoiceRecorderPractice } from './VoiceRecorderPractice';
 import { RehearsalTracker } from './RehearsalTracker';
@@ -43,6 +43,24 @@ const ARABIC_SIZE_CLASS: Record<ArabicSize, string> = {
   md: 'text-3xl sm:text-4xl leading-[2.2]',
   lg: 'text-4xl sm:text-[44px] leading-[2.25]',
 };
+
+function LessonRecording({ track }: { track: MediaItem }) {
+  if (!track.video) {
+    return <AudioPlayerBox title={track.name} url={track.url} fallback={track.fallback} />;
+  }
+
+  return (
+    <details className="rounded-xl border border-[#E5DEC9] bg-white p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-[#064E3B]">{track.name}</summary>
+      <video controls playsInline preload="none" src={track.url} aria-label={track.name}
+        className="mt-3 aspect-video w-full rounded-lg bg-black" />
+      <a href={track.fallback ?? track.url} target="_blank" rel="noopener noreferrer"
+        className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-[#7A1830] underline">
+        Kaynakta aç <ExternalLink className="size-3" aria-hidden="true" />
+      </a>
+    </details>
+  );
+}
 
 export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({
   moduleData,
@@ -387,16 +405,11 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({
                   {directMedia.length > 0 && (
                     <div className="space-y-2.5 pt-1">
                       <div className="text-xs font-semibold text-[#064E3B]">
-                        Hazır Ses Kaydı ({directMedia.length})
+                        Sesli okuma ({directMedia.length})
                       </div>
                       <div className="space-y-3">
                         {directMedia.map((track) => (
-                          <AudioPlayerBox
-                            key={track.url}
-                            title={track.name}
-                            url={track.url}
-                            fallback={track.fallback}
-                          />
+                          <LessonRecording key={track.url} track={track} />
                         ))}
                       </div>
                     </div>
@@ -592,12 +605,7 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({
                   </p>
 
                   {directMedia.map((track) => (
-                    <AudioPlayerBox
-                      key={track.url}
-                      title={track.name}
-                      url={track.url}
-                      fallback={track.fallback}
-                    />
+                    <LessonRecording key={track.url} track={track} />
                   ))}
 
                   {linkMedia.map((track) => (

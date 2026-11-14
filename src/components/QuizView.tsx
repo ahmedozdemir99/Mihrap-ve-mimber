@@ -1,38 +1,37 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { ArrowRight, CheckCircle2, RotateCcw, XCircle } from 'lucide-react';
-import { MODULES, QUIZ_QUESTIONS } from '../data/academyData';
+import { KNOWLEDGE_TESTS } from '../data/knowledgeTests';
 
 interface QuizViewProps {
   onQuizAnswer?: (isCorrect: boolean) => void;
   onQuizComplete?: (result: {
-    moduleFilter: 'all' | number;
+    testId: string;
     score: number;
     total: number;
   }) => void;
-  bestOverallPercent?: number;
+  bestScores: Record<string, number>;
 }
 
 export const QuizView: React.FC<QuizViewProps> = ({
   onQuizAnswer,
   onQuizComplete,
-  bestOverallPercent = 0,
+  bestScores,
 }) => {
-  const [selectedModule, setSelectedModule] = useState<'all' | number>('all');
+  const [selectedTest, setSelectedTest] = useState(0);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [finished, setFinished] = useState(false);
 
-  const questions = useMemo(() => {
-    if (selectedModule === 'all') return QUIZ_QUESTIONS;
-    return QUIZ_QUESTIONS.filter((q) => q.moduleIndex === selectedModule);
-  }, [selectedModule]);
+  const test = KNOWLEDGE_TESTS[selectedTest];
+  const { questions } = test;
+  const completedCount = KNOWLEDGE_TESTS.filter(({ id }) => bestScores[id] !== undefined).length;
 
   const activeQuestion = questions[currentIndex];
   const score = questions.filter((q) => answers[q.id] === q.correctIndex).length;
 
-  const resetQuiz = (modFilter: 'all' | number = selectedModule) => {
-    setSelectedModule(modFilter);
+  const resetQuiz = (index = selectedTest) => {
+    setSelectedTest(index);
     setCurrentIndex(0);
     setSelectedOption(null);
     setAnswers({});
@@ -53,7 +52,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
     } else {
       setFinished(true);
       onQuizComplete?.({
-        moduleFilter: selectedModule,
+        testId: test.id,
         score,
         total: questions.length,
       });
@@ -68,45 +67,33 @@ export const QuizView: React.FC<QuizViewProps> = ({
             Bilgi Değerlendirme Testi
           </h2>
           <p className="mt-1 text-sm text-[#575047]">
-            Hanefî mezhebi cami görevleri, müezzinlik, hutbe, teravih ve ezan-kamet esasları üzerine açıklamalı sorular.
-            {bestOverallPercent > 0 && (
-              <span className="ml-2 font-mono-num text-[#064E3B] font-semibold">
-                · En yüksek genel başarı: %{bestOverallPercent}
-              </span>
-            )}
+            Namaz, Kur’an ve ibadetler üzerine 10 test. Her testte 10 soru ve açıklamalı cevaplar var.
           </p>
-        </div>
-
-        <div className="shrink-0">
-          <label htmlFor="quizModuleFilter" className="sr-only">
-            Modül filtresi
-          </label>
-          <select
-            id="quizModuleFilter"
-            value={selectedModule}
-            onChange={(e) => {
-              const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
-              resetQuiz(val);
-            }}
-            className="rounded-xl border border-[#D4CBB4] bg-white px-3.5 py-2 text-xs font-semibold text-[#1F1C18] focus:outline-none focus:border-[#064E3B]"
-          >
-            <option value="all">Tüm modüller ({QUIZ_QUESTIONS.length} soru)</option>
-            {MODULES.map((m) => {
-              const count = QUIZ_QUESTIONS.filter((q) => q.moduleIndex === m.index).length;
-              return (
-                <option key={m.id} value={m.index}>
-                  {m.shortTitle} ({count} soru)
-                </option>
-              );
-            })}
-          </select>
+          <p className="mt-2 text-xs font-semibold text-[#064E3B]">{completedCount} / {KNOWLEDGE_TESTS.length} test tamamlandı</p>
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="Bilgi testleri">
+        {KNOWLEDGE_TESTS.map((item, index) => (
+          <button key={item.id} type="button" aria-pressed={index === selectedTest}
+            onClick={() => { if (index !== selectedTest) resetQuiz(index); }}
+            className="rounded-xl border border-[#D4CBB4] bg-white p-3 text-left text-sm text-[#1F1C18] hover:border-[#064E3B] aria-pressed:border-[#064E3B] aria-pressed:bg-[#EEF7F3]">
+            <span className="block font-semibold">{item.id}. {item.title}</span>
+            <span className="mt-1 block text-xs text-[#575047]">
+              {bestScores[item.id] === undefined ? '10 soru' : `En iyi sonuç ${bestScores[item.id]}/10`}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <a href={test.source} target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-semibold text-[#064E3B] underline underline-offset-2">
+        Konunun kaynağını incele
+      </a>
 
       {!finished && activeQuestion ? (
         <article className="rounded-2xl border border-[#E5DEC9] bg-white overflow-hidden max-w-3xl">
           <header className="border-b border-[#EFE9DA] bg-[#FAF7F0] px-5 py-3.5 flex items-center justify-between gap-4 text-xs text-[#645C52]">
-            <span>{MODULES[activeQuestion.moduleIndex]?.title}</span>
+            <span>{test.title}</span>
             <span className="font-mono-num font-semibold text-[#1F1C18]">
               Soru {currentIndex + 1} / {questions.length} · Doğru: {score}
             </span>
@@ -162,7 +149,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
             </div>
 
             {selectedOption !== null && (
-              <div className="rounded-xl border border-[#E5DEC9] bg-[#FBF6EA] p-4 text-sm text-[#3F3629] leading-relaxed">
+              <div role="status" className="rounded-xl border border-[#E5DEC9] bg-[#FBF6EA] p-4 text-sm text-[#3F3629] leading-relaxed">
                 <strong className="text-[#1F1C18]">Açıklama: </strong>
                 {activeQuestion.explanation}
               </div>
@@ -204,7 +191,7 @@ export const QuizView: React.FC<QuizViewProps> = ({
 
             <button
               type="button"
-              onClick={() => resetQuiz(selectedModule)}
+              onClick={() => resetQuiz()}
               className="inline-flex items-center gap-2 rounded-lg bg-[#064E3B] px-4 py-2.5 text-xs font-semibold text-white hover:bg-[#053D2E] transition-colors whitespace-nowrap shrink-0"
             >
               <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />

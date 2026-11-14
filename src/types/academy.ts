@@ -3,6 +3,7 @@ export type MediaItem = {
   url: string;
   fallback?: string;
   link?: boolean;
+  video?: boolean;
 };
 
 export type LessonCard = {
@@ -45,7 +46,6 @@ export type AudioArchiveEntry = {
 
 export type QuizQuestion = {
   id: string;
-  moduleIndex: number;
   question: string;
   options: string[];
   correctIndex: number;
@@ -72,6 +72,7 @@ export type QuizStats = {
   bestOverallTotal: number;
   testsCompleted: number;
   passedModules: number[];
+  bestScores?: Record<string, number>;
 };
 
 export type ProgressBackup = {

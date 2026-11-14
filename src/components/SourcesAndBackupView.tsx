@@ -199,6 +199,11 @@ export const BackupView: React.FC<BackupViewProps> = ({
             typeof q.testsCompleted === 'number' && q.testsCompleted >= 0
               ? Math.floor(q.testsCompleted)
               : 0,
+          bestScores: q.bestScores && typeof q.bestScores === 'object'
+            ? Object.fromEntries(Object.entries(q.bestScores).filter(
+                ([id, score]) => /^(?:[1-9]|10)$/.test(id) && Number.isInteger(score) && Number(score) >= 0 && Number(score) <= 10
+              ))
+            : undefined,
           passedModules: Array.isArray(q.passedModules)
             ? q.passedModules.filter((x): x is number => typeof x === 'number' && x >= 0)
             : [],
