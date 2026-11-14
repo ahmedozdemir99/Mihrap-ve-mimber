@@ -501,7 +501,7 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({
                         Türkçe harfler Arapça mahreçlerin tam karşılığını vermez; doğru telaffuz ve tecvid için harekeli Arapça metni ehil bir hocaya dinleterek çalışın.
                       </p>
 
-                      <VoiceRecorderPractice />
+                      <VoiceRecorderPractice key={card.id} />
                     </>
                   ) : (
                     <div className="rounded-xl border border-[#E5DEC9] bg-[#FAF7F0] p-5 space-y-3">
@@ -580,7 +580,7 @@ export const LessonWorkspace: React.FC<LessonWorkspaceProps> = ({
                   {/* Interactive Rehearsal Simulators */}
                   {moduleData.index === 3 && <RehearsalTracker mode="teravih" />}
                   {moduleData.index === 0 && <RehearsalTracker mode="tesbihat" />}
-                  {moduleData.index === 5 && <VoiceRecorderPractice />}
+                  {moduleData.index === 5 && <VoiceRecorderPractice key={card.id} />}
                 </div>
               )}
 

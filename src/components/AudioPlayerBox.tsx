@@ -29,9 +29,10 @@ export const AudioPlayerBox: React.FC<AudioPlayerBoxProps> = ({
 
   const handleRetry = () => {
     setError(false);
-    if (audioRef.current) {
-      audioRef.current.load();
-    }
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.load();
+    void audio.play().catch(() => setError(true));
   };
 
   return (
@@ -49,20 +50,21 @@ export const AudioPlayerBox: React.FC<AudioPlayerBoxProps> = ({
       </div>
 
       <div className="mt-3">
-        {!error ? (
-          <audio
-            ref={audioRef}
-            controls
-            preload="metadata"
-            src={url}
-            onPlay={handlePlay}
-            onError={() => setError(true)}
-            className="w-full h-10"
-          >
-            Tarayıcınız ses oynatıcısını desteklemiyor.
-          </audio>
-        ) : (
-          <div className="rounded-lg border border-[#E5C5C5] bg-[#FDF6F6] p-3 text-xs text-[#7A1830]">
+        <audio
+          hidden={error}
+          ref={audioRef}
+          aria-label={title}
+          controls
+          preload="none"
+          src={url}
+          onPlay={handlePlay}
+          onError={() => setError(true)}
+          className="w-full h-10"
+        >
+          Tarayıcınız ses oynatıcısını desteklemiyor.
+        </audio>
+        {error && (
+          <div role="status" className="rounded-lg border border-[#E5C5C5] bg-[#FDF6F6] p-3 text-xs text-[#7A1830]">
             <p className="font-medium">
               Ses kaydı şu anda yüklenemedi. İnternet bağlantınızı kontrol edip tekrar deneyebilir veya aşağıdaki kaynak sayfasından dinleyebilirsiniz.
             </p>

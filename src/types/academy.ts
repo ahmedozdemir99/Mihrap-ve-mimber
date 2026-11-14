@@ -82,4 +82,5 @@ export type ProgressBackup = {
   dailyActivity?: DailyActivityLog;
   quizStats?: QuizStats;
   notes?: Record<string, string>;
+  memorizationCompleted?: string[];
 };

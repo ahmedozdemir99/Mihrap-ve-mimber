@@ -68,6 +68,7 @@ export const AudioArchiveView: React.FC<AudioArchiveViewProps> = ({
                 key={g}
                 type="button"
                 onClick={() => setFilter(g)}
+                aria-pressed={active}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   active
                     ? 'bg-white text-[#1F1C18] shadow-xs'

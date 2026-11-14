@@ -64,6 +64,7 @@ interface BackupViewProps {
   dailyActivity: DailyActivityLog;
   quizStats: QuizStats;
   lessonNotes: Record<string, string>;
+  memorizationCompleted: string[];
   earnedBadgesCount: number;
   totalBadgesCount: number;
   onImportBackup: (data: ProgressBackup) => void;
@@ -76,6 +77,7 @@ export const BackupView: React.FC<BackupViewProps> = ({
   dailyActivity,
   quizStats,
   lessonNotes,
+  memorizationCompleted,
   earnedBadgesCount,
   totalBadgesCount,
   onImportBackup,
@@ -89,18 +91,22 @@ export const BackupView: React.FC<BackupViewProps> = ({
   const [confirmingReset, setConfirmingReset] = useState(false);
 
   const totalLessons = MODULES.reduce((acc, m) => acc + m.cards.length, 0);
-  const completedLessons = Object.values(completed).filter(Boolean).length;
+  const completedLessons = MODULES.reduce(
+    (total, module) => total + module.cards.filter((_, index) => completed[`${module.index}:${index}`]).length,
+    0
+  );
   const savedNotesCount = Object.values(lessonNotes).filter((t) => t.trim().length > 0).length;
 
   const handleExport = () => {
     const payload: ProgressBackup = {
-      version: 5,
+      version: 6,
       exportedAt: new Date().toISOString(),
       completed,
       practiceChecks,
       dailyActivity,
       quizStats,
       notes: lessonNotes,
+      memorizationCompleted,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -118,7 +124,8 @@ export const BackupView: React.FC<BackupViewProps> = ({
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
     try {
       const parsed = JSON.parse(await file.text());
@@ -212,17 +219,18 @@ export const BackupView: React.FC<BackupViewProps> = ({
       }
 
       onImportBackup({
-        version: 5,
+        version: 6,
         completed: sanitizedCompleted,
-        practiceChecks: sanitizedChecks,
-        dailyActivity: sanitizedActivity,
+        practiceChecks: parsed.practiceChecks === undefined ? undefined : sanitizedChecks,
+        dailyActivity: parsed.dailyActivity === undefined ? undefined : sanitizedActivity,
         quizStats: sanitizedQuizStats,
-        notes: sanitizedNotes,
+        notes: parsed.notes === undefined ? undefined : sanitizedNotes,
+        memorizationCompleted: Array.isArray(parsed.memorizationCompleted) ? parsed.memorizationCompleted : undefined,
       });
 
       setStatusMessage({
         type: 'success',
-        text: 'İlerleme ve uygulama adımları başarıyla geri yüklendi.',
+        text: 'İlerleme kayıtları başarıyla geri yüklendi.',
       });
     } catch (err) {
       setStatusMessage({
@@ -233,7 +241,7 @@ export const BackupView: React.FC<BackupViewProps> = ({
             : 'Yedek dosyası okunamadı.',
       });
     } finally {
-      e.target.value = '';
+      input.value = '';
     }
   };
 
@@ -244,7 +252,7 @@ export const BackupView: React.FC<BackupViewProps> = ({
           İlerleme ve Yedekleme
         </h2>
         <p className="mt-1.5 text-sm text-[#575047] leading-relaxed">
-          Tamamladığınız dersler ve uygulama prova işaretleriniz tarayıcınızda saklanır. JSON yedeği alarak başka bir cihaza aktarabilirsiniz.
+          Ders, prova ve ezber ilerlemeniz tarayıcınızda saklanır. JSON yedeği alarak başka bir cihaza aktarabilirsiniz.
         </p>
       </div>
 
@@ -344,7 +352,7 @@ export const BackupView: React.FC<BackupViewProps> = ({
                   setConfirmingReset(false);
                   setStatusMessage({
                     type: 'success',
-                    text: 'Tüm ders ve prova ilerlemeleri sıfırlandı.',
+                    text: 'Ders, prova ve ezber ilerlemesi sıfırlandı.',
                   });
                 }}
                 className="rounded-lg bg-[#7A1830] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#5E1224] transition-colors whitespace-nowrap shrink-0"

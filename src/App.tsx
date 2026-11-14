@@ -9,6 +9,7 @@ import {
   Headphones,
   Layers,
   Search,
+  NotebookPen,
   X,
 } from 'lucide-react';
 import { MODULES } from './data/academyData';
@@ -19,15 +20,33 @@ import { AudioArchiveView } from './components/AudioArchiveView';
 import { QuizView } from './components/QuizView';
 import { BackupView, SourcesView } from './components/SourcesAndBackupView';
 import { toLocalDateKey, WeeklyProgressChart } from './components/WeeklyProgressChart';
+import { MEMORIZATION_LESSON_IDS } from './data/memorization';
+import { PRAYER_LESSONS } from './data/memorizationPrayers';
+import { JOURNEY_FINAL_ID, JOURNEY_REVIEW_LESSONS, LEGACY_HATIM_ID, reviewCompletionId } from './data/memorizationJourney';
+import { MemorizationView } from './components/MemorizationView';
 import { BadgesSection } from './components/BadgesSection';
 
-type AppView = 'home' | 'course' | 'audio' | 'quiz' | 'sources' | 'backup';
+type AppView = 'home' | 'course' | 'audio' | 'quiz' | 'sources' | 'backup' | 'memorization';
 
 const PROGRESS_STORAGE_KEY = 'mihrapPremiumProgressV1';
 const PRACTICE_STORAGE_KEY = 'mihrapPremiumPracticeV1';
 const ACTIVITY_STORAGE_KEY = 'mihrapPremiumActivityV1';
 const QUIZ_STORAGE_KEY = 'mihrapPremiumQuizV1';
 const NOTES_STORAGE_KEY = 'mihrapPremiumNotesV1';
+const MEMORIZATION_STORAGE_KEY = 'mihrapMemorizationV1';
+const EZBER_IDS = new Set([
+  ...MEMORIZATION_LESSON_IDS,
+  ...PRAYER_LESSONS.map((lesson) => lesson.id),
+  JOURNEY_FINAL_ID,
+  LEGACY_HATIM_ID,
+  ...JOURNEY_REVIEW_LESSONS.map(reviewCompletionId),
+]);
+
+function validMemorizationIds(value: unknown): string[] {
+  return Array.isArray(value)
+    ? [...new Set(value.filter((id): id is string => typeof id === 'string' && EZBER_IDS.has(id)))]
+    : [];
+}
 
 const EMPTY_QUIZ_STATS: QuizStats = {
   bestOverallScore: 0,
@@ -114,6 +133,22 @@ export default function App() {
       return {};
     }
   });
+
+  const [memorizationCompleted, setMemorizationCompleted] = useState<string[]>(() => {
+    try {
+      return validMemorizationIds(JSON.parse(localStorage.getItem(MEMORIZATION_STORAGE_KEY) ?? 'null'));
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MEMORIZATION_STORAGE_KEY, JSON.stringify(memorizationCompleted));
+    } catch {
+      // Storage unavailable
+    }
+  }, [memorizationCompleted]);
 
   const [unlockedToast, setUnlockedToast] = useState<string[]>([]);
 
@@ -333,6 +368,9 @@ export default function App() {
 
   const handleImportBackup = (data: ProgressBackup) => {
     setCompleted(data.completed);
+    if (Array.isArray(data.memorizationCompleted)) {
+      setMemorizationCompleted(validMemorizationIds(data.memorizationCompleted));
+    }
     if (data.practiceChecks) {
       setPracticeChecks(data.practiceChecks);
     }
@@ -353,6 +391,7 @@ export default function App() {
     setDailyActivity({});
     setQuizStats(EMPTY_QUIZ_STATS);
     setLessonNotes({});
+    setMemorizationCompleted([]);
     setUnlockedToast([]);
   };
 
@@ -362,27 +401,28 @@ export default function App() {
       : 0;
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#1F1C18] pb-20 md:pb-0">
+    <div className="min-h-screen flex flex-col bg-[#FAF7F0] text-[#1F1C18] pb-[calc(5rem+env(safe-area-inset-bottom))] lg:pb-0">
       {/* 3-Zone Top Bar */}
       <header className="sticky top-0 z-30 border-b border-[#E5DEC9] bg-[#FAF7F0]/95 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2 lg:gap-6">
           {/* Zone 1: Single-line Brand Wordmark */}
           <button
             type="button"
             onClick={() => navigateTo('home')}
-            className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#1F1C18] hover:text-[#064E3B] transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#064E3B]"
+            className="font-display text-xl sm:text-2xl font-bold tracking-tight text-[#1F1C18] hover:text-[#064E3B] transition-colors min-w-0 text-left leading-tight focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#064E3B]"
           >
             Mihrap ve Minber Akademisi
           </button>
 
           {/* Zone 2: 4 Concise Nav Links */}
           <nav
-            className="hidden md:flex items-center gap-6 text-sm font-medium text-[#575047]"
+            className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm font-medium text-[#575047]"
             aria-label="Ana menü"
           >
             {(
               [
                 { id: 'home', label: 'Modüller' },
+                { id: 'memorization', label: 'Ezber Dersleri' },
                 { id: 'audio', label: 'Ses Arşivi' },
                 { id: 'quiz', label: 'Bilgi Testi' },
                 { id: 'sources', label: 'Kaynaklar' },
@@ -395,6 +435,7 @@ export default function App() {
                   key={navItem.id}
                   type="button"
                   onClick={() => navigateTo(navItem.id)}
+                  aria-current={active ? 'page' : undefined}
                   className={`py-1 whitespace-nowrap shrink-0 transition-colors border-b-2 ${
                     active
                       ? 'text-[#1F1C18] font-semibold border-[#7A1830]'
@@ -412,6 +453,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => navigateTo('backup')}
+              aria-current={view === 'backup' ? 'page' : undefined}
               className="inline-flex items-center gap-2 rounded-lg bg-[#064E3B] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#053D2E] transition-colors whitespace-nowrap shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#064E3B]"
             >
               <span>Yedekleme</span>
@@ -452,7 +494,7 @@ export default function App() {
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
                 <div className="lg:col-span-8 space-y-3">
                   <div className="text-xs font-medium text-[#7A1830]">
-                    Hanefî Mezhebi · Çevrimdışı Cami Görevleri ve İbadet Eğitimi
+                    Hanefî mezhebine göre cami görevleri ve ibadet eğitimi
                   </div>
                   <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-bold text-[#1F1C18] leading-[1.12] tracking-tight">
                     Cuma, teravih, hutbe ve müezzinlik eğitimi tek rehberde
@@ -512,6 +554,14 @@ export default function App() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('memorization')}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#064E3B] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#053D2E]"
+                  >
+                    <NotebookPen className="h-3.5 w-3.5" aria-hidden="true" />
+                    Ezber Dersleri
+                  </button>
                   <button
                     type="button"
                     onClick={() => navigateTo('audio')}
@@ -699,6 +749,15 @@ export default function App() {
           />
         )}
 
+        {view === 'memorization' && (
+          <MemorizationView
+            completed={memorizationCompleted}
+            onToggleComplete={(id) => setMemorizationCompleted((previous) =>
+              previous.includes(id) ? previous.filter((item) => item !== id) : [...previous, id]
+            )}
+          />
+        )}
+
         {view === 'audio' && (
           <AudioArchiveView onOpenLesson={(mIdx, cIdx) => openModule(mIdx, cIdx)} />
         )}
@@ -723,6 +782,7 @@ export default function App() {
             dailyActivity={dailyActivity}
             quizStats={quizStats}
             lessonNotes={lessonNotes}
+            memorizationCompleted={memorizationCompleted}
             earnedBadgesCount={earnedBadgesCount}
             totalBadgesCount={badges.length}
             onImportBackup={handleImportBackup}
@@ -756,12 +816,13 @@ export default function App() {
 
       {/* Mobile Compact Bottom Bar (height ~58px, <10% mobile viewport) */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[#E5DEC9] bg-white/95 backdrop-blur-sm px-2 py-1.5 grid grid-cols-5 gap-1"
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[#E5DEC9] bg-white/95 backdrop-blur-sm px-2 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] grid grid-cols-6 gap-1"
         aria-label="Mobil alt menü"
       >
         {(
           [
             { id: 'home', label: 'Modüller', icon: Layers },
+            { id: 'memorization', label: 'Ezber', icon: NotebookPen },
             { id: 'audio', label: 'Ses', icon: Headphones },
             { id: 'quiz', label: 'Test', icon: CheckCircle2 },
             { id: 'sources', label: 'Kaynak', icon: BookOpen },
@@ -776,7 +837,8 @@ export default function App() {
               key={item.id}
               type="button"
               onClick={() => navigateTo(item.id)}
-              className={`flex flex-col items-center justify-center py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
+              aria-current={active ? 'page' : undefined}
+              className={`flex flex-col items-center justify-center min-h-11 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${
                 active ? 'text-[#7A1830] bg-[#FAF7F0]' : 'text-[#575047]'
               }`}
             >
