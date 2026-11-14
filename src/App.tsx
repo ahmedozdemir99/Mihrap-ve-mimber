@@ -71,7 +71,9 @@ const ACCENT_STYLES = {
 };
 
 export default function App() {
-  const [view, setView] = useState<AppView>('home');
+  const [view, setView] = useState<AppView>(() =>
+    new URLSearchParams(window.location.search).get('ders') === 'ezber' ? 'memorization' : 'home',
+  );
   const [activeModuleIdx, setActiveModuleIdx] = useState(0);
   const [activeCardIdx, setActiveCardIdx] = useState(0);
   const [mobileLessonView, setMobileLessonView] = useState<'list' | 'card'>('list');

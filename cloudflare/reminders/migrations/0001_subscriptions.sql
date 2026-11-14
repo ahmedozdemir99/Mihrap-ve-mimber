@@ -1,0 +1,9 @@
+CREATE TABLE subscriptions (
+  id INTEGER PRIMARY KEY,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  last_slot TEXT NOT NULL DEFAULT '',
+  claimed_at INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0
+);

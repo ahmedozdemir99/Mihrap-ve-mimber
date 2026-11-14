@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpen, Check, Eye, EyeOff, ExternalLink, Search } from 'lucide-react';
 import { MEMORIZATION_SURAHS } from '../data/memorization';
 import { MemorizationJourney } from './MemorizationJourney';
+import { ReminderSettings } from './ReminderSettings';
 import { firstIncompleteStage, JOURNEY_FINAL_ID, JOURNEY_REVIEW_LESSONS, JOURNEY_STAGES, journeyStageProgress, reviewCompletionId } from '../data/memorizationJourney';
 import { PRAYER_GROUPS, PRAYER_LESSONS } from '../data/memorizationPrayers';
 
@@ -156,6 +157,8 @@ export function MemorizationView({ completed, onToggleComplete }: Props) {
           {completedLessonCount} / {studyIndex.length} ders tamamlandı
         </p>
       </header>
+
+      {panel === 'journey' && <ReminderSettings />}
 
       <nav aria-label="Ezber çalışma görünümü" className="flex flex-wrap gap-2">
         <button type="button" aria-pressed={panel !== 'catalog'} className={secondaryButton + ' aria-pressed:bg-[#EEF7F3]'}
