@@ -21,17 +21,23 @@ function rememberEndpoint(endpoint: string | null) {
   }
 }
 
+function encodeKey(key: ArrayBuffer | null) {
+  if (!key) throw new Error('Missing subscription key');
+  return btoa(String.fromCharCode(...new Uint8Array(key))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 function decodeKey(key: string) {
   const base64 = key.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(key.length / 4) * 4, '=');
   return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 }
 
 const serviceWorkerUrl = '/service-worker.js';
-const timeoutMs = 10_000;
+const timeoutMs = 15_000;
+const pushTimeoutMs = 30_000;
 
-function withinTimeout<T>(operation: Promise<T>): Promise<T> {
+function withinTimeout<T>(operation: Promise<T>, limit = timeoutMs): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error('Notification setup timed out')), timeoutMs);
+    const timer = window.setTimeout(() => reject(new Error('Notification setup timed out')), limit);
     operation.then(resolve, reject).finally(() => window.clearTimeout(timer));
   });
 }
@@ -61,17 +67,29 @@ async function loadPushSetup() {
 }
 
 async function saveSubscription(method: 'POST' | 'DELETE', subscription: PushSubscription) {
+  const body = {
+    endpoint: subscription.endpoint,
+    keys: {
+      p256dh: encodeKey(subscription.getKey('p256dh')),
+      auth: encodeKey(subscription.getKey('auth')),
+    },
+  };
   const response = await fetchNotification('/subscription', {
     method,
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(subscription.toJSON()),
+    body: JSON.stringify(body),
   });
-  if (!response.ok) throw new Error('Subscription update failed');
+  if (!response.ok) {
+    const { error } = await response.json().catch(() => ({}));
+    if (error === 'invalid_subscription') throw new Error('Unsupported push subscription');
+    throw new Error('Subscription update failed');
+  }
 }
 
 export function ReminderSettings() {
   const supported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
   const setup = useRef<ReturnType<typeof loadPushSetup> | null>(null);
+  const readySetup = useRef<Awaited<ReturnType<typeof loadPushSetup>> | null>(null);
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,8 +100,10 @@ export function ReminderSettings() {
     let active = true;
     const attempt = loadPushSetup();
     setup.current = attempt;
-    void attempt.then(async ({ registration }) => {
-      const current = await withinTimeout(registration.pushManager.getSubscription());
+    void attempt.then(async (prepared) => {
+      if (!active || setup.current !== attempt) return;
+      readySetup.current = prepared;
+      const current = await withinTimeout(prepared.registration.pushManager.getSubscription());
       if (!active || setup.current !== attempt) return;
       setSubscription(current);
       setEnabled(Boolean(current && current.endpoint === readSyncedEndpoint() && Notification.permission === 'granted'));
@@ -97,6 +117,7 @@ export function ReminderSettings() {
     setBusy(true);
     setMessage('Bildirimler açılıyor…');
     const prepared = setup.current;
+    let step: 'permission' | 'setup' | 'device' | 'server' = 'permission';
     try {
       const permission = Notification.permission === 'granted'
         ? 'granted' : await Notification.requestPermission();
@@ -109,24 +130,46 @@ export function ReminderSettings() {
 
       // Ignore any background check that started before this user action.
       setup.current = null;
-      const { registration, publicKey } = await (prepared ? prepared.catch(() => loadPushSetup()) : loadPushSetup());
-      let current = await withinTimeout(registration.pushManager.getSubscription());
-      const previousKey = current?.options.applicationServerKey;
-      const previousBytes = previousKey ? new Uint8Array(previousKey) : null;
-      if (current && previousBytes && (previousBytes.length !== publicKey.length ||
-        !publicKey.every((byte, index) => byte === previousBytes[index]))) {
-        await withinTimeout(current.unsubscribe());
-        current = null;
+      step = 'setup';
+      const { registration, publicKey } = readySetup.current ??
+        await (prepared ? prepared.catch(() => loadPushSetup()) : loadPushSetup());
+      step = 'device';
+      const manager = registration.pushManager;
+      const subscribe = () => withinTimeout(manager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }), pushTimeoutMs);
+      let current: PushSubscription;
+      try {
+        current = await subscribe();
+      } catch (error) {
+        // Browsers report a subscription made with an old application key as InvalidStateError.
+        if (!(error instanceof DOMException) || error.name !== 'InvalidStateError') throw error;
+        const previous = await withinTimeout(manager.getSubscription());
+        const previousKey = previous?.options?.applicationServerKey;
+        if (!previous || !previousKey) throw error;
+        const bytes = new Uint8Array(previousKey);
+        if (bytes.length === publicKey.length && publicKey.every((byte, index) => byte === bytes[index])) throw error;
+        await withinTimeout(previous.unsubscribe());
         setSubscription(null);
+        current = await subscribe();
       }
-      current ??= await withinTimeout(registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }));
       setSubscription(current);
+      step = 'server';
       await saveSubscription('POST', current);
       rememberEndpoint(current.endpoint);
       setEnabled(true);
       setMessage('Bu cihazda bildirimler açıldı.');
-    } catch {
-      setMessage('Bildirim kaydı tamamlanamadı. Yeniden deneyin.');
+    } catch (error) {
+      if (step === 'setup') {
+        readySetup.current = null;
+        setMessage('Bildirim ayarları yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.');
+      } else if (step === 'server' && error instanceof Error && error.message === 'Unsupported push subscription') {
+        setMessage('Akademi bu tarayıcının bildirim kaydını kabul edemedi. Android’de Chrome ile deneyin.');
+      } else if (step === 'server') {
+        setMessage('Cihaz bağlandı fakat Akademi kaydı tamamlanamadı. Tekrar deneyin.');
+      } else if (step === 'permission' || (error instanceof DOMException && error.name === 'NotAllowedError')) {
+        setMessage('Cihaz bildirim izni vermedi. Tarayıcınızın bildirim ayarlarını kontrol edin.');
+      } else {
+        setMessage('Tarayıcınız bildirim servisine bağlanamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.');
+      }
     } finally {
       setBusy(false);
     }
