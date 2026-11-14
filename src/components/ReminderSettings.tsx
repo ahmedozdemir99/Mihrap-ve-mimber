@@ -52,18 +52,57 @@ async function fetchNotification(path: string, options: RequestInit = {}) {
   }
 }
 
+// Public VAPID key for the production Pages origin. Keep it in sync when rotating the Worker keys.
+const productionOrigin = 'https://mihrap-ve-mimber.pages.dev';
+const productionPublicKey = 'BP-G5iTGSy8yyF6o2WQIXwklwfEP5gtgwvGaH3BYrASiY2n8I9naFJWdG1VOoTcM1NKdFK6CN94SCXqy0yQ0EJA';
+
+async function readPushKey() {
+  try {
+    const response = await fetchNotification('/config', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Push has not been configured');
+    const { publicKey } = await response.json();
+    if (typeof publicKey !== 'string') throw new Error('Missing push key');
+    const key = decodeKey(publicKey);
+    if (key.length !== 65 || key[0] !== 4) throw new Error('Invalid push key');
+    return key;
+  } catch {
+    if (window.location.origin === productionOrigin) return decodeKey(productionPublicKey);
+    throw new Error('push-config');
+  }
+}
+
+async function getPushRegistration() {
+  const workers = navigator.serviceWorker;
+  try {
+    const existing = await withinTimeout(workers.getRegistration('/'));
+    if (existing?.active && new URL(existing.active.scriptURL).pathname === serviceWorkerUrl) return existing;
+    const registration = await withinTimeout(workers.register(serviceWorkerUrl, { updateViaCache: 'none' }));
+    if (registration.active && new URL(registration.active.scriptURL).pathname === serviceWorkerUrl) return registration;
+
+    const worker = registration.installing ?? registration.waiting;
+    if (!worker) throw new Error('Service worker missing');
+    let checkState: () => void = () => {};
+    try {
+      await withinTimeout(new Promise<void>((resolve, reject) => {
+        checkState = () => {
+          if (worker.state === 'activated') resolve();
+          if (worker.state === 'redundant') reject(new Error('Service worker installation failed'));
+        };
+        worker.addEventListener('statechange', checkState);
+        checkState();
+      }));
+    } finally {
+      worker.removeEventListener('statechange', checkState);
+    }
+    return registration;
+  } catch {
+    throw new Error('push-registration');
+  }
+}
+
 async function loadPushSetup() {
-  const [registration, response] = await Promise.all([
-    withinTimeout(navigator.serviceWorker.register(serviceWorkerUrl)),
-    fetchNotification('/config', { cache: 'no-store' }),
-  ]);
-  if (!response.ok) throw new Error('Push has not been configured');
-  const { publicKey } = await response.json();
-  if (typeof publicKey !== 'string') throw new Error('Missing push key');
-  const key = decodeKey(publicKey);
-  if (key.length !== 65 || key[0] !== 4) throw new Error('Invalid push key');
-  const activeRegistration = registration.active ? registration : await withinTimeout(navigator.serviceWorker.ready);
-  return { registration: activeRegistration, publicKey: key };
+  const [registration, publicKey] = await Promise.all([getPushRegistration(), readPushKey()]);
+  return { registration, publicKey };
 }
 
 async function saveSubscription(method: 'POST' | 'DELETE', subscription: PushSubscription) {
@@ -160,7 +199,9 @@ export function ReminderSettings() {
     } catch (error) {
       if (step === 'setup') {
         readySetup.current = null;
-        setMessage('Bildirim ayarları yüklenemedi. Bağlantınızı kontrol edip tekrar deneyin.');
+        setMessage(error instanceof Error && error.message === 'push-registration'
+          ? 'Bildirimlerin arka plan bileşeni başlatılamadı. Akademi’yi Chrome’da açıp tekrar deneyin.'
+          : 'Akademi’nin bildirim ayarları alınamadı. Sayfayı yenileyip tekrar deneyin.');
       } else if (step === 'server' && error instanceof Error && error.message === 'Unsupported push subscription') {
         setMessage('Akademi bu tarayıcının bildirim kaydını kabul edemedi. Android’de Chrome ile deneyin.');
       } else if (step === 'server') {
