@@ -54,6 +54,7 @@ async function fetchNotification(path: string, options: RequestInit = {}) {
 
 // Public VAPID key for the production Pages origin. Keep it in sync when rotating the Worker keys.
 const productionOrigin = 'https://mihrap-ve-mimber.pages.dev';
+const productionEzberUrl = productionOrigin + '/?ders=ezber';
 const productionPublicKey = 'BP-G5iTGSy8yyF6o2WQIXwklwfEP5gtgwvGaH3BYrASiY2n8I9naFJWdG1VOoTcM1NKdFK6CN94SCXqy0yQ0EJA';
 
 async function readPushKey() {
@@ -133,6 +134,7 @@ export function ReminderSettings() {
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [showPublishedSite, setShowPublishedSite] = useState(false);
 
   useEffect(() => {
     if (!supported) return;
@@ -155,6 +157,7 @@ export function ReminderSettings() {
   async function enable() {
     setBusy(true);
     setMessage('Bildirimler açılıyor…');
+    setShowPublishedSite(false);
     const prepared = setup.current;
     let step: 'permission' | 'setup' | 'device' | 'server' = 'permission';
     try {
@@ -199,9 +202,12 @@ export function ReminderSettings() {
     } catch (error) {
       if (step === 'setup') {
         readySetup.current = null;
-        setMessage(error instanceof Error && error.message === 'push-registration'
-          ? 'Bildirimlerin arka plan bileşeni başlatılamadı. Akademi’yi Chrome’da açıp tekrar deneyin.'
-          : 'Akademi’nin bildirim ayarları alınamadı. Sayfayı yenileyip tekrar deneyin.');
+        if (error instanceof Error && error.message === 'push-config' && window.location.origin !== productionOrigin) {
+          setMessage('Bu adreste bildirim servisine ulaşılamadı. Bildirimleri Akademi’nin yayın adresinde açın.');
+          setShowPublishedSite(true);
+        } else {
+          setMessage('Bildirimlerin arka plan bileşeni başlatılamadı. Akademi’yi Chrome’da açıp tekrar deneyin.');
+        }
       } else if (step === 'server' && error instanceof Error && error.message === 'Unsupported push subscription') {
         setMessage('Akademi bu tarayıcının bildirim kaydını kabul edemedi. Android’de Chrome ile deneyin.');
       } else if (step === 'server') {
@@ -247,7 +253,12 @@ export function ReminderSettings() {
             : enabled ? 'Bu cihazda açık.' : '')}
         </p>
       </div>
-      {supported && (
+      {showPublishedSite ? (
+        <a href={productionEzberUrl}
+          className="inline-flex min-h-11 items-center rounded-lg bg-[#064E3B] px-3 text-sm font-semibold text-white hover:bg-[#075B45]">
+          Yayındaki Akademi’yi aç
+        </a>
+      ) : supported && (
         <button type="button" onClick={enabled ? disable : enable} disabled={busy}
           className="min-h-11 rounded-lg border border-[#D4CBB4] px-3 text-sm font-semibold text-[#064E3B] hover:bg-[#F3EDE0] disabled:opacity-40">
           {enabled ? 'Bildirimleri kapat' : 'Bildirimleri aç'}
